@@ -10,6 +10,10 @@
 #include <ctype.h>
 #include <math.h>
 
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
+
 #define MAXLEN 512
 
 /* welcome message */
@@ -22,10 +26,12 @@ const char ERR_DATA[] = "ERR DATA ";
 const char OK_STATS[] =  "OK STATS ";
 const char OK_DATA[] =  "OK DATA ";
 
+//FILE *fp = fopen(strcat(server_log, ), "w");
+
 char data[MAXLEN];
 
-double mean(double *values) {
-    double sum = 0;
+double mean(int *values) {
+    int sum = 0;
     double mean;
     int i;
 
@@ -35,8 +41,8 @@ double mean(double *values) {
     return sum/i;
 }
 
-double variance(double *values, double mean) {
-    double sum = 0;
+double variance(int *values, double mean) {
+    int sum = 0;
     int i;
 
     for(i = 0; values[i] != 0; i++) {
@@ -46,9 +52,9 @@ double variance(double *values, double mean) {
 }
 
 void calculate(int childSocket) {
-    double values[MAXLEN];
+    int values[MAXLEN];
     double m, v;
-    int counter = 1;
+    int counter = 0;
     char message[MAXLEN] = "";
     char buffer[MAXLEN] = "";
 
@@ -75,9 +81,8 @@ void calculate(int childSocket) {
             i++;
         }
 
-        fprintf(stdout, "Contents of values: ");
         for(int i = 0; values[i] != '\0'; i++) {
-            printf("%f", values[i]);
+            printf("%d", values[i]);
         }
         printf("\n");
 
@@ -87,7 +92,6 @@ void calculate(int childSocket) {
         sprintf(buffer, "%d %f %f\n", counter, m, v);
         strcpy(message, OK_STATS);
         strcat(message, buffer);
-        fprintf(stdout, "The following string will be sent: %s", message);
         write(childSocket, message, sizeof message);
         fprintf(stdout, "Message sent.\n");
 
@@ -104,7 +108,7 @@ int evaluateData(int childSocket) {
     char message[MAXLEN] = "";
 
     read(childSocket, receiveBuffer, sizeof receiveBuffer);
-    fprintf(stdout, "Received: %s\n", receiveBuffer);
+    fprintf(stdout, "Received:%s", receiveBuffer);
 
     /* check if data has correct syntax */
     if(receiveBuffer[0] == ' ') {
@@ -120,17 +124,12 @@ int evaluateData(int childSocket) {
         return -1;
     }
     for(int i = 0; i < strlen(receiveBuffer)-2; i++) {
-        if(isalpha(receiveBuffer[i]) || ispunct(receiveBuffer[i])) {
-            if(receiveBuffer[i] == '.') {
-                continue;
-            }
-            else {
-                sprintf(buffer, "Invalid character: %c\n", receiveBuffer[i]);
-                strcpy(message, ERR_SYNTAX);
-                strcat(message, buffer);
-                write(childSocket, message, sizeof message);
-                return -1;
-            }
+        if(isalpha(receiveBuffer[i]) || ispunct(receiveBuffer[i]) || iscntrl(receiveBuffer[i])) {
+            sprintf(buffer, "Invalid character: %c\n", receiveBuffer[i]);
+            strcpy(message, ERR_SYNTAX);
+            strcat(message, buffer);
+            write(childSocket, message, sizeof message);
+            return -1;
         }
     }
     /* if data has been sent, check if it's congruent and then store it */
@@ -237,9 +236,11 @@ int main(int argc, char **argv) {
                 connected = 0;
                 fprintf(stdout, "Closing connection.\n");
             }
-            fprintf(stdout, "[DEBUG] contents of data: %s\n", data);         
         }
+        /* close socket */
         close(childSocket);
+        /* clear data buffer to avoid sending data to other connecting clients */
+        memset(data, '\0', sizeof data);
     }
     
     close(serverSocket);

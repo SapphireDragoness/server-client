@@ -8,6 +8,10 @@
 #include <arpa/inet.h>
 #include <ctype.h>
 
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
+
 #define MAXLEN 512
 
 const char *CODES[] = {"OK", "ERR", "SYNTAX", "START", "DATA", "STATS"}; /* codes sent from server */
@@ -56,31 +60,37 @@ void formatData() {
 }   
 
 /* send data to server */
-void sendData(int simpleSocket) {
+int sendData(int simpleSocket) {
     int i = 0, c;
     size_t len;
 
-    printf("Enter data one number at a time, 'q' (on a separate line) to terminate:\n");
+    fprintf(stdout, "Enter data one number at a time, 'q' (on a separate line) to terminate:\n");
     while((c = getchar()) != 'q') {
         if(c == '\n') {
             printf("> ");
-            data[i] = ' ';
+            if(data[i-1] != ' ') {
+                data[i] = ' ';
+                i++;
+            }
+        }
+        else if(isdigit(c)) {
+            data[i] = c;
+            i++;
         }
         else {
-            data[i] = c;
+            fprintf(stdout, ANSI_COLOR_RED "Character %c not allowed, please enter an integer value.\n" ANSI_COLOR_RESET, c);
         }
-        i++;
     }
-    if(i == 0) {
-        fprintf(stdout, "Not enough data.\n");
-        return;
+    if(i < 2) {
+        fprintf(stdout, ANSI_COLOR_RED "Not enough data.\n" ANSI_COLOR_RESET);
+        return 1;
     }
     formatData();
-    printf("Sending: %s\n", formattedData);
     fprintf(stdout, "Sending data...\n");
     write(simpleSocket, formattedData, MAXLEN);
     fprintf(stdout, "Data sent.\n");
     memset(formattedData, '\0', sizeof formattedData);
+    return 0;
 }
 
 /* strip codes form server response and present it to user */
@@ -95,12 +105,12 @@ int handleResponse(int simpleSocket) {
         /* received START */
         if(strcmp(token, CODES[3]) == 0) {
             token = strtok(NULL, "\n");
-            printf("Server message: %s\n", token);
+            printf(ANSI_COLOR_GREEN "Server message: %s\n" ANSI_COLOR_RESET, token);
         }
         /* received DATA */
         if(strcmp(token, CODES[4]) == 0) {
             token = strtok(NULL, "\n");
-            printf("%s data correctly received.\n", token);
+            printf(ANSI_COLOR_GREEN "%s data correctly received.\n" ANSI_COLOR_RESET, token);
         }
         /* received STATS, store in buffer for later use */
         if(strcmp(token, CODES[5]) == 0) {
@@ -116,22 +126,21 @@ int handleResponse(int simpleSocket) {
         /* received SYNTAX, close connection */
         if(strcmp(token, CODES[2]) == 0) {
             token = strtok(NULL, "\n");
-            printf("Malformed message: %s\n", token);
+            printf(ANSI_COLOR_RED "Malformed message: %s\n" ANSI_COLOR_RESET, token);
             printf("Closing connection.\n");
             return -1;
         }
         /* received DATA */
         if(strcmp(token, CODES[4]) == 0) {
             token = strtok(NULL, "\n");
-            printf("Data error: %s\n", token);
-            printf("Please enter more data.\n");
+            printf(ANSI_COLOR_RED "Data error: %s\n" ANSI_COLOR_RESET, token);
             return 1;
         }
         /* received STATS */
         if(strcmp(token, CODES[5]) == 0) {
             token = strtok(NULL, "\n");
-            printf("Computation error: %s\n", token);
-            printf("Please try again.\n");
+            printf(ANSI_COLOR_RED "Computation error: %s\n" ANSI_COLOR_RESET, token);
+            printf("Select option 1 and send data to server first.\n");
             return 1;
         }
     }
@@ -141,13 +150,12 @@ int handleResponse(int simpleSocket) {
 
 void showResults() {
     char *token = strtok(serverData, " ");
-    fprintf(stdout, "[DEBUG]: data received %s\n", token);
     token = strtok(NULL, " ");
 
-    fprintf(stdout, "Samples: %s\n", storage);
-    fprintf(stdout, "Mean: %s\n", token);
+    fprintf(stdout, ANSI_COLOR_GREEN "Samples:%s\n" ANSI_COLOR_RESET, storage);
+    fprintf(stdout, ANSI_COLOR_GREEN "Mean: %s\n" ANSI_COLOR_RESET, token);
     token = strtok(NULL, "\n");
-    fprintf(stdout, "Variance: %s\n", token);
+    fprintf(stdout, ANSI_COLOR_GREEN "Variance: %s\n" ANSI_COLOR_RESET, token);
 
     memset(storage, '\0', MAXLEN);
     memset(serverData, '\0', MAXLEN);
@@ -168,7 +176,7 @@ int main(int argc, char **argv) {
     simpleSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
     if(simpleSocket < 0) {
-        perror("Socket error");
+        perror(ANSI_COLOR_RED "Socket error" ANSI_COLOR_RESET);
         exit(1);
     }
 
@@ -209,11 +217,12 @@ int main(int argc, char **argv) {
                 return 0;
             /* send data to server and handle response */
             case 1:
-                sendData(simpleSocket);
-                status = handleResponse(simpleSocket);
-                if(status < 0) {
-                    close(simpleSocket);
-                    return 0;   
+                if(!sendData(simpleSocket)) {
+                    status = handleResponse(simpleSocket);
+                    if(status < 0) {
+                        close(simpleSocket);
+                        return 0;
+                    }  
                 }
                 break;
             case 2:
@@ -231,7 +240,7 @@ int main(int argc, char **argv) {
                 showUsage();
                 break;
             default: 
-                fprintf(stdout, "Invalid command.\n");
+                fprintf(stdout, ANSI_COLOR_RED "Invalid command.\n" ANSI_COLOR_RESET);
                 break;
         }
         fflush(stdout);
